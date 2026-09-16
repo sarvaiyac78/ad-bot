@@ -17,6 +17,26 @@ ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS
 TARGET_BATCH_SIZE = 5
 
 
+def check_login_failed(page):
+    try:
+        error_texts = [
+            "Email does not exist!",
+            "Email does not exist",
+            "Invalid email or password",
+            "User not found",
+            "Password is incorrect",
+            "Please enter a valid email address"
+        ]
+        for frame in page.frames:
+            for txt in error_texts:
+                element = frame.get_by_text(txt, exact=False)
+                if element.count() > 0 and element.first.is_visible():
+                    return True
+    except Exception:
+        pass
+    return False
+
+
 def purge_popups(page):
     try:
         page.keyboard.press("Escape")
@@ -262,7 +282,12 @@ def process_single_account(page, account):
     page.fill("input[placeholder='Enter your email address']", email)
     page.fill("input[placeholder='Enter your Password']", password)
     page.get_by_role("button", name="Log in").last.click()
-    page.wait_for_timeout(4000)
+    page.wait_for_timeout(3500)
+
+    # Check for invalid email or bad password error
+    if check_login_failed(page):
+        print(f"[{email}] LOGIN FAILED: 'Email does not exist' or invalid credentials detected!")
+        return "INVALID_ACCOUNT"
 
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
@@ -356,8 +381,10 @@ def run_all_accounts():
 
             context.close()
 
-            if status == "LIMIT_REACHED":
-                print(f"--> [REMOVING ACCOUNT] {account['email']} reached limit. Dropping from active batch.")
+            # Remove account if limit reached OR if email doesn't exist/login fails
+            if status in ["LIMIT_REACHED", "INVALID_ACCOUNT"]:
+                reason = "invalid email" if status == "INVALID_ACCOUNT" else "limit reached"
+                print(f"--> [REMOVING ACCOUNT] {account['email']} ({reason}). Dropping from active batch.")
                 active_batch.pop(current_idx)
 
                 if remaining_pool:
@@ -371,7 +398,7 @@ def run_all_accounts():
                 time.sleep(1)
 
         print("\n" + "=" * 60)
-        print("ALL ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT FOR TODAY!")
+        print("ALL VALID ACCOUNTS HAVE COMPLETED THEIR PROCESS!")
         print("=" * 60)
         browser.close()
 
