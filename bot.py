@@ -3,35 +3,20 @@ import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# LOAD CREDENTIALS SECURELY FROM GITHUB SECRETS OR LOCAL POOL
+# LOAD CREDENTIALS EXCLUSIVELY FROM GITHUB SECRETS
 # ============================================================
 raw_emails = os.environ.get("ALL_EMAILS", "")
-email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "")
 
-if raw_emails.strip():
-    ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
-else:
-    # Local fallback account list
-    ALL_EMAILS = [
-        "facofa@denipl.com", "gasemu@denipl.com", "golihyti@forexzig.com",
-        "hozylyji@denipl.com", "jesafago@forexzig.com", "jolopam942@hebase.com",
-        "kufywexe@denipl.net", "kuvyxa@forexzig.com", "liluloxe@denipl.net",
-        "lizisu@fxzig.com", "lojyfoxy@forexzig.com", "maweqo@denipl.net",
-        "naqiki@forexzig.com", "nysesu@fxzig.com", "pokuky@denipl.com",
-        "punamo@denipl.com", "qyrijida@denipl.com", "raluxyqa@fxzig.com",
-        "rexoxyza@fxzig.com", "rixakibo@forexzig.com", "rorehyzi@forexzig.com",
-        "rotehavu@denipl.net", "rovofama@fxzig.com", "saxoc96700@hilostar.com",
-        "sikexyli@denipl.net", "tuxaxalu@denipl.com", "venafolu@forexzig.com",
-        "wasose@forexzig.com", "wukocavo@denipl.net", "wulesyro@fxzig.com",
-        "wylesyro@fxzig.com", "xagymyho@denipl.net", "xehawefe@fxzig.com",
-        "xokevufy@fxzig.com", "xylexu@forexzig.com"
-    ]
+ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
 
-# RUN CONFIGURATION (5 Accounts Per Batch, 10 Cycles Each)
-BATCH_SIZE = 5
-CYCLES_PER_BATCH = 10
+if not ALL_EMAILS:
+    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
 
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
+
+BATCH_SIZE = 5
+CYCLES_PER_BATCH = 10
 
 
 # ============================================================
@@ -120,7 +105,6 @@ def click_close_button(page):
     except Exception:
         pass
 
-    # 1. JS Direct Click Search
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -140,7 +124,6 @@ def click_close_button(page):
     except Exception:
         pass
 
-    # 2. Bounding Box & Frame Click Search
     for frame in page.frames:
         locators = [
             frame.get_by_text("Close", exact=True),
@@ -172,7 +155,6 @@ def click_ok_button(page):
     """Clicks the credit reward OK button across main page and frames."""
     page.wait_for_timeout(1500)
 
-    # 1. Direct JS Button Detection
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -192,7 +174,6 @@ def click_ok_button(page):
     except Exception:
         pass
 
-    # 2. Native Playwright Locators
     for frame in page.frames:
         locators = [
             frame.get_by_role("button", name="OK"),
