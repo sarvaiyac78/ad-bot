@@ -3,7 +3,7 @@ import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# LOAD CREDENTIALS EXCLUSIVELY FROM GITHUB SECRETS
+# LOAD ALL CREDENTIALS FROM GITHUB SECRETS
 # ============================================================
 raw_emails = os.environ.get("ALL_EMAILS", "")
 email_password = os.environ.get("ACCOUNT_PASSWORD", "")
