@@ -43,33 +43,130 @@ def check_login_failed(page):
     return False
 
 
-def purge_popups(page):
-    page.wait_for_timeout(1000)
+def dismiss_initial_popups(page):
+    """Dismisses promotional modals ('GPT Image 2.5', 'SEEDANCE', 'WAN 3.0') on /earn-credits."""
+    page.wait_for_timeout(2000)
+
+    try:
+        page.keyboard.press("Escape")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
+
     try:
         page.evaluate("""() => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const gptModal = allElements.find(el => 
-                el.children.length === 0 && 
-                (el.textContent.includes('GPT Image 2.5') || el.textContent.includes("WHAT'S NEW"))
-            );
-            if (gptModal) {
-                let container = gptModal;
-                for (let i = 0; i < 10; i++) {
-                    if (!container || container === document.body) break;
-                    const style = window.getComputedStyle(container);
-                    if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
-                        container.remove();
-                        break;
-                    }
-                    container = container.parentElement;
+            const buttons = Array.from(document.querySelectorAll('button, div, span, svg, i, a'));
+            for (let b of buttons) {
+                const txt = b.textContent ? b.textContent.trim() : '';
+                const aria = b.getAttribute('aria-label') || '';
+                if ((txt === '×' || txt === 'x' || txt === 'X' || aria.toLowerCase().includes('close')) && b.offsetWidth > 0 && b.offsetHeight > 0) {
+                    b.click();
                 }
             }
+        }""")
+        page.wait_for_timeout(1000)
+    except Exception:
+        pass
+
+    try:
+        page.evaluate("""() => {
+            const badPhrases = ['gpt image 2.5', 'seedance', 'wan 3.0', "what's new", 'celebrity twin finder'];
+            const allDivs = Array.from(document.querySelectorAll('div, section, dialog, [role="dialog"]'));
+            
+            allDivs.forEach(el => {
+                const txt = el.textContent ? el.textContent.toLowerCase() : '';
+                if (badPhrases.some(p => txt.includes(p)) && !txt.includes('watch ad to earn credits')) {
+                    let container = el;
+                    for (let i = 0; i < 8; i++) {
+                        if (!container || container === document.body) break;
+                        const style = window.getComputedStyle(container);
+                        if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
+                            container.remove();
+                            break;
+                        }
+                        container = container.parentElement;
+                    }
+                }
+            });
 
             const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], [class*="mask"]');
             overlays.forEach(o => o.remove());
         }""")
+        page.wait_for_timeout(500)
     except Exception:
         pass
+
+
+def is_ad_player_open(page):
+    """Checks if an actual ad overlay or video frame is currently open on the page."""
+    try:
+        for frame in page.frames:
+            if frame.get_by_text("Close", exact=True).is_visible() or \
+               frame.get_by_text("Advertisement", exact=False).is_visible() or \
+               frame.locator("text=/^close$/i").is_visible():
+                return True
+        return page.evaluate("""() => {
+            const els = Array.from(document.querySelectorAll('*'));
+            return els.some(el => 
+                el.children.length === 0 && 
+                (el.textContent.trim().toLowerCase() === 'close' || el.textContent.includes('Advertisement')) && 
+                el.offsetWidth > 0 && el.offsetHeight > 0
+            );
+        }""")
+    except Exception:
+        return False
+
+
+def click_watch_ad(page):
+    """Clears popups, scrolls to 'Watch ad to earn credits', clicks 'Go Now', and verifies ad opens."""
+    for attempt in range(3):
+        dismiss_initial_popups(page)
+        page.mouse.wheel(0, 500)
+        page.wait_for_timeout(1000)
+
+        try:
+            card = page.locator("div").filter(has_text="Watch ad to earn credits")
+            btn = card.get_by_text("Go Now").last
+            if btn.is_visible():
+                btn.scroll_into_view_if_needed()
+                btn.click(force=True)
+                page.wait_for_timeout(3000)
+                if is_ad_player_open(page):
+                    return True
+        except Exception:
+            pass
+
+        try:
+            clicked = page.evaluate("""() => {
+                const allElements = Array.from(document.querySelectorAll('*'));
+                const watchAdTitle = allElements.find(el =>
+                    el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
+                );
+                if (!watchAdTitle) return false;
+
+                let card = watchAdTitle;
+                while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
+                    card = card.parentElement;
+                }
+                if (!card) card = watchAdTitle.closest('div');
+                if (!card) return false;
+
+                const goNowBtn = Array.from(card.querySelectorAll('*')).find(el =>
+                    el.textContent.trim().toLowerCase().includes('go now')
+                );
+
+                if (!goNowBtn) return false;
+                goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                goNowBtn.click();
+                return true;
+            }""")
+            page.wait_for_timeout(3000)
+            if clicked and is_ad_player_open(page):
+                return True
+        except Exception:
+            pass
+
+    return False
 
 
 def check_daily_limit_reached(page):
@@ -159,48 +256,6 @@ def try_click_ok(page):
     return False
 
 
-def click_watch_ad(page):
-    try:
-        card = page.locator("div").filter(has_text="Watch ad to earn credits")
-        btn = card.get_by_text("Go Now").last
-        if btn.is_visible():
-            btn.scroll_into_view_if_needed()
-            btn.click(force=True)
-            return True
-    except Exception:
-        pass
-
-    try:
-        clicked = page.evaluate("""() => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const watchAdTitle = allElements.find(el =>
-                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
-            );
-            if (!watchAdTitle) return false;
-
-            let card = watchAdTitle;
-            while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
-                card = card.parentElement;
-            }
-            if (!card) card = watchAdTitle.closest('div');
-            if (!card) return false;
-
-            const goNowBtn = Array.from(card.querySelectorAll('*')).find(el =>
-                el.textContent.trim().toLowerCase().includes('go now')
-            );
-
-            if (!goNowBtn) return false;
-            goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-            goNowBtn.click();
-            return true;
-        }""")
-        if clicked:
-            return True
-    except Exception:
-        pass
-    return False
-
-
 def process_single_account(page, account):
     email = account["email"]
     password = account["password"]
@@ -234,16 +289,13 @@ def process_single_account(page, account):
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
     page.wait_for_timeout(3000)
 
-    purge_popups(page)
-    page.mouse.wheel(0, 500)
-    page.wait_for_timeout(1000)
+    dismiss_initial_popups(page)
 
     if check_daily_limit_reached(page):
         print(f"[{email}] LIMIT DETECTED: Account has used all ad opportunities for today!")
         return "LIMIT_REACHED"
 
     print(f"[{email}] Starting ad task...")
-    purge_popups(page)
     if not click_watch_ad(page):
         print(f"[{email}] ERROR: Could not click 'Go Now'. Skipping...")
         return "ERROR"
@@ -253,30 +305,35 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Watching ad & actively monitoring for Close/OK buttons...")
+    # --- WATCH AD FOR 35 SECONDS BEFORE CLOSING ---
+    print(f"[{email}] Ad opened! Watching video ad for 35 seconds...")
+    time.sleep(35)
+
+    print(f"[{email}] Closing ad player...")
     ad_closed = False
-    reward_claimed = False
-    start_time = time.time()
-
-    while time.time() - start_time < 40:
-        page.wait_for_timeout(1000)
-
-        if not ad_closed:
-            if try_click_close(page):
-                print(f"[{email}] Ad closed successfully.")
-                ad_closed = True
-                page.wait_for_timeout(1500)
-
-        if ad_closed or (time.time() - start_time > 15):
-            if try_click_ok(page):
-                print(f"[{email}] SUCCESS: Reward claimed!")
-                reward_claimed = True
-                break
+    for _ in range(6):
+        if try_click_close(page):
+            print(f"[{email}] Ad closed successfully.")
+            ad_closed = True
+            break
+        page.wait_for_timeout(1500)
 
     if not ad_closed:
-        print(f"[{email}] Warning: Close button click was not detected within 40s.")
+        print(f"[{email}] Warning: Close button not found.")
+
+    page.wait_for_timeout(2000)
+
+    print(f"[{email}] Claiming reward...")
+    reward_claimed = False
+    for _ in range(6):
+        if try_click_ok(page):
+            print(f"[{email}] SUCCESS: Reward claimed!")
+            reward_claimed = True
+            break
+        page.wait_for_timeout(1500)
+
     if not reward_claimed:
-        print(f"[{email}] Warning: OK button not found within 40s.")
+        print(f"[{email}] Warning: OK button not found.")
 
     return "SUCCESS"
 
