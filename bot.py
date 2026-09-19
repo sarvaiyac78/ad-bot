@@ -3,25 +3,40 @@ import time
 from playwright.sync_api import sync_playwright
 
 # ============================================================
-# LOAD CREDENTIALS SECURELY FROM GITHUB SECRETS
+# LOAD CREDENTIALS SECURELY FROM GITHUB SECRETS OR LOCAL POOL
 # ============================================================
 raw_emails = os.environ.get("ALL_EMAILS", "")
-email_password = os.environ.get("ACCOUNT_PASSWORD", "")
+email_password = os.environ.get("ACCOUNT_PASSWORD", "Chetan@2026")
 
-ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
+if raw_emails.strip():
+    ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip()]
+else:
+    # Local fallback account list
+    ALL_EMAILS = [
+        "facofa@denipl.com", "gasemu@denipl.com", "golihyti@forexzig.com",
+        "hozylyji@denipl.com", "jesafago@forexzig.com", "jolopam942@hebase.com",
+        "kufywexe@denipl.net", "kuvyxa@forexzig.com", "liluloxe@denipl.net",
+        "lizisu@fxzig.com", "lojyfoxy@forexzig.com", "maweqo@denipl.net",
+        "naqiki@forexzig.com", "nysesu@fxzig.com", "pokuky@denipl.com",
+        "punamo@denipl.com", "qyrijida@denipl.com", "raluxyqa@fxzig.com",
+        "rexoxyza@fxzig.com", "rixakibo@forexzig.com", "rorehyzi@forexzig.com",
+        "rotehavu@denipl.net", "rovofama@fxzig.com", "saxoc96700@hilostar.com",
+        "sikexyli@denipl.net", "tuxaxalu@denipl.com", "venafolu@forexzig.com",
+        "wasose@forexzig.com", "wukocavo@denipl.net", "wulesyro@fxzig.com",
+        "wylesyro@fxzig.com", "xagymyho@denipl.net", "xehawefe@fxzig.com",
+        "xokevufy@fxzig.com", "xylexu@forexzig.com"
+    ]
 
-if not ALL_EMAILS:
-    raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
-
-# ============================================================
-# TEST MODE LIMIT: Set to run 5 accounts
-# Remove '[:5]' below when ready for full 50-account production!
-# ============================================================
-ALL_EMAILS = ALL_EMAILS[:5]
+# RUN CONFIGURATION (5 Accounts Per Batch, 10 Cycles Each)
+BATCH_SIZE = 5
+CYCLES_PER_BATCH = 10
 
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
-TARGET_BATCH_SIZE = 5
 
+
+# ============================================================
+# AUTOMATION HELPER FUNCTIONS
+# ============================================================
 
 def check_login_failed(page):
     try:
@@ -43,10 +58,20 @@ def check_login_failed(page):
     return False
 
 
-def dismiss_initial_popups(page):
-    """Dismisses promotional modals ('GPT Image 2.5', 'SEEDANCE', 'WAN 3.0') on /earn-credits."""
-    page.wait_for_timeout(1500)
+def check_daily_limit_reached(page):
+    try:
+        limit_text = "You have used all your ad watch opportunities for today"
+        for frame in page.frames:
+            element = frame.get_by_text(limit_text, exact=False)
+            if element.count() > 0 and element.first.is_visible():
+                return True
+    except Exception:
+        pass
+    return False
 
+
+def purge_popups(page):
+    """Removes floating ad widgets (Celebrity Twin Finder, GPT Image 2.5) and modal backdrops."""
     try:
         page.keyboard.press("Escape")
         page.wait_for_timeout(300)
@@ -55,12 +80,18 @@ def dismiss_initial_popups(page):
 
     try:
         page.evaluate("""() => {
-            const badPhrases = ['gpt image 2.5', 'seedance', 'wan 3.0', "what's new", 'celebrity twin finder'];
-            const allDivs = Array.from(document.querySelectorAll('div, section, dialog, [role="dialog"]'));
+            const badPhrases = [
+                'Celebrity Twin Finder', 
+                'Find Your Star', 
+                'GPT Image 2.5', 
+                "WHAT'S NEW",
+                'SEEDANCE',
+                'WAN 3.0'
+            ];
             
-            allDivs.forEach(el => {
-                const txt = el.textContent ? el.textContent.toLowerCase() : '';
-                if (badPhrases.some(p => txt.includes(p)) && !txt.includes('watch ad to earn credits')) {
+            const allNodes = Array.from(document.querySelectorAll('*'));
+            allNodes.forEach(el => {
+                if (el.children.length === 0 && badPhrases.some(p => el.textContent.includes(p))) {
                     let container = el;
                     for (let i = 0; i < 8; i++) {
                         if (!container || container === document.body) break;
@@ -74,90 +105,22 @@ def dismiss_initial_popups(page):
                 }
             });
 
-            const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], [class*="mask"]');
+            const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], div[role="dialog"]');
             overlays.forEach(o => o.remove());
         }""")
+    except Exception:
+        pass
+
+
+def click_close_button(page):
+    """Finds all visible 'Close' elements after watching an ad and clicks them."""
+    try:
+        page.keyboard.press("Escape")
         page.wait_for_timeout(500)
     except Exception:
         pass
 
-
-def click_watch_ad(page):
-    """Scrolls directly to 'Watch ad to earn credits' card and clicks its 'Go Now' button."""
-    try:
-        # 1. Scroll directly to the "Watch ad to earn credits" section
-        page.evaluate("""() => {
-            const els = Array.from(document.querySelectorAll('*'));
-            const card = els.find(el => el.children.length === 0 && el.textContent.includes('Watch ad to earn credits'));
-            if (card) {
-                card.scrollIntoView({ behavior: 'instant', block: 'center' });
-            }
-        }""")
-        page.wait_for_timeout(1000)
-
-        # 2. Click the orange 'Go Now' button inside the card container
-        clicked = page.evaluate("""() => {
-            const all = Array.from(document.querySelectorAll('*'));
-            const titleEl = all.find(el => 
-                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
-            );
-            if (!titleEl) return false;
-
-            let container = titleEl;
-            for (let i = 0; i < 6; i++) {
-                if (!container || container === document.body) break;
-                if (container.textContent.includes('Go Now')) {
-                    break;
-                }
-                container = container.parentElement;
-            }
-
-            if (!container) return false;
-
-            const btns = Array.from(container.querySelectorAll('*'));
-            const goBtn = btns.find(el => 
-                el.children.length === 0 && el.textContent.trim().toLowerCase() === 'go now'
-            ) || btns.find(el => el.textContent.trim().toLowerCase().includes('go now'));
-
-            if (goBtn) {
-                goBtn.click();
-                return true;
-            }
-            return false;
-        }""")
-        if clicked:
-            return True
-    except Exception:
-        pass
-
-    # Fallback locator
-    try:
-        card = page.locator("div").filter(has_text="Watch ad to earn credits")
-        btn = card.get_by_text("Go Now").last
-        if btn.is_visible():
-            btn.scroll_into_view_if_needed()
-            btn.click(force=True)
-            return True
-    except Exception:
-        pass
-
-    return False
-
-
-def check_daily_limit_reached(page):
-    try:
-        limit_text = "You have used all your ad watch opportunities for today"
-        for frame in page.frames:
-            element = frame.get_by_text(limit_text, exact=False)
-            if element.count() > 0 and element.first.is_visible():
-                return True
-    except Exception:
-        pass
-    return False
-
-
-def try_click_close(page):
-    """Finds and clicks the top-right 'Close' text element on the ad player overlay."""
+    # 1. JS Direct Click Search
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -177,26 +140,39 @@ def try_click_close(page):
     except Exception:
         pass
 
+    # 2. Bounding Box & Frame Click Search
     for frame in page.frames:
         locators = [
             frame.get_by_text("Close", exact=True),
             frame.locator("text=/^close$/i"),
-            frame.locator("span:has-text('Close')"),
-            frame.locator("div:has-text('Close')"),
-            frame.locator("button:has-text('Close')")
+            frame.locator("button:has-text('Close')"),
+            frame.locator("[role='button']:has-text('Close')"),
+            frame.locator("span:has-text('Close')")
         ]
         for loc in locators:
             try:
-                if loc.count() > 0 and loc.first.is_visible():
-                    loc.first.click(force=True)
-                    return True
+                count = loc.count()
+                for i in range(count):
+                    element = loc.nth(i)
+                    if element.is_visible():
+                        box = element.bounding_box()
+                        if box:
+                            page.mouse.click(box["x"] + box["width"] / 2, box["y"] + box["height"] / 2)
+                        else:
+                            element.click(force=True)
+                        page.wait_for_timeout(1000)
+                        return True
             except Exception:
                 pass
+
     return False
 
 
-def try_click_ok(page):
-    """Finds and clicks the 'OK' button on the 'Congratulations!' reward modal."""
+def click_ok_button(page):
+    """Clicks the credit reward OK button across main page and frames."""
+    page.wait_for_timeout(1500)
+
+    # 1. Direct JS Button Detection
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -216,22 +192,71 @@ def try_click_ok(page):
     except Exception:
         pass
 
+    # 2. Native Playwright Locators
     for frame in page.frames:
         locators = [
             frame.get_by_role("button", name="OK"),
             frame.get_by_text("OK", exact=True),
-            frame.locator("button:has-text('OK')"),
-            frame.locator("div[role='dialog'] button")
+            frame.locator("text=/^ok$/i")
         ]
         for loc in locators:
             try:
-                if loc.count() > 0 and loc.first.is_visible():
-                    loc.first.click(force=True)
-                    return True
+                count = loc.count()
+                for i in range(count):
+                    element = loc.nth(i)
+                    if element.is_visible():
+                        element.click(force=True)
+                        return True
             except Exception:
                 pass
     return False
 
+
+def click_watch_ad(page):
+    """Locates and clicks 'Go Now' inside the Watch Ad card."""
+    try:
+        clicked = page.evaluate("""() => {
+            const allElements = Array.from(document.querySelectorAll('*'));
+            const watchAdTitle = allElements.find(el =>
+                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
+            );
+            if (!watchAdTitle) return false;
+
+            let card = watchAdTitle;
+            while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
+                card = card.parentElement;
+            }
+            if (!card) card = watchAdTitle.closest('div');
+            if (!card) return false;
+
+            const elements = Array.from(card.querySelectorAll('*'));
+            const goNowBtn = elements.find(el =>
+                el.textContent.trim().toLowerCase().includes('go now')
+            );
+
+            if (!goNowBtn) return false;
+
+            goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+            goNowBtn.click();
+            return true;
+        }""")
+        if clicked:
+            return True
+    except Exception:
+        pass
+
+    try:
+        page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
+        return True
+    except Exception:
+        pass
+
+    return False
+
+
+# ============================================================
+# SINGLE ACCOUNT EXECUTION
+# ============================================================
 
 def process_single_account(page, account):
     email = account["email"]
@@ -241,6 +266,7 @@ def process_single_account(page, account):
     page.goto("https://easemate.ai/Dashboard", wait_until="load")
     page.wait_for_timeout(3000)
 
+    # 1. Login
     page.get_by_text("Log In", exact=True).first.click()
     page.wait_for_timeout(1000)
 
@@ -256,77 +282,75 @@ def process_single_account(page, account):
     page.fill("input[placeholder='Enter your email address']", email)
     page.fill("input[placeholder='Enter your Password']", password)
     page.get_by_role("button", name="Log in").last.click()
-    page.wait_for_timeout(3500)
+    page.wait_for_timeout(4000)
 
     if check_login_failed(page):
-        print(f"[{email}] LOGIN FAILED: 'Email does not exist' or invalid credentials detected!")
+        print(f"[{email}] LOGIN FAILED: Invalid account credentials!")
         return "INVALID_ACCOUNT"
 
+    # 2. Earn Credits Navigation
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
-    page.wait_for_timeout(3000)
+    page.wait_for_timeout(4000)
 
-    dismiss_initial_popups(page)
+    # 3. Purge floating widgets & Scroll
+    purge_popups(page)
+    page.wait_for_timeout(1000)
 
     if check_daily_limit_reached(page):
-        print(f"[{email}] LIMIT DETECTED: Account has used all ad opportunities for today!")
+        print(f"[{email}] LIMIT DETECTED: Daily limit reached!")
         return "LIMIT_REACHED"
 
+    page.mouse.wheel(0, 500)
+    page.wait_for_timeout(1000)
+
+    # 4. Click Go Now
     print(f"[{email}] Starting ad task...")
+    purge_popups(page)
     if not click_watch_ad(page):
         print(f"[{email}] ERROR: Could not click 'Go Now'. Skipping...")
         return "ERROR"
 
     page.wait_for_timeout(2000)
     if check_daily_limit_reached(page):
-        print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
+        print(f"[{email}] LIMIT DETECTED: Daily limit reached!")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Ad launched! Watching video ad (30s)...")
-    time.sleep(30)
+    # 5. Wait for Video Playback
+    print(f"[{email}] Watching video ad (38s)...")
+    time.sleep(38)
 
+    # 6. Close Ad
     print(f"[{email}] Closing ad player...")
-    ad_closed = False
-    for _ in range(6):
-        if try_click_close(page):
-            print(f"[{email}] Ad closed successfully.")
-            ad_closed = True
-            break
-        page.wait_for_timeout(1500)
-
-    if not ad_closed:
-        print(f"[{email}] Warning: Close button not found.")
+    if click_close_button(page):
+        print(f"[{email}] Ad closed successfully.")
+    else:
+        print(f"[{email}] Warning: Close button click failed.")
 
     page.wait_for_timeout(2000)
 
+    # 7. Claim OK
     print(f"[{email}] Claiming reward...")
-    reward_claimed = False
-    for _ in range(6):
-        if try_click_ok(page):
-            print(f"[{email}] SUCCESS: Reward claimed!")
-            reward_claimed = True
-            break
-        page.wait_for_timeout(1500)
-
-    if not reward_claimed:
+    if click_ok_button(page):
+        print(f"[{email}] SUCCESS: Reward claimed for {email}!")
+    else:
         print(f"[{email}] Warning: OK button not found.")
 
     return "SUCCESS"
 
 
+# ============================================================
+# BATCH & MULTI-CYCLE RUNNER
+# ============================================================
+
 def run_all_accounts():
     os.makedirs("videos", exist_ok=True)
-    remaining_pool = list(ACCOUNTS)
-    active_batch = []
-
-    while remaining_pool and len(active_batch) < TARGET_BATCH_SIZE:
-        active_batch.append(remaining_pool.pop(0))
-
-    cycle_count = 1
-    current_idx = 0
+    batches = [ACCOUNTS[i:i + BATCH_SIZE] for i in range(0, len(ACCOUNTS), BATCH_SIZE)]
+    total_batches = len(batches)
 
     with sync_playwright() as p:
-        print(f"Total Accounts Loaded: {len(ACCOUNTS)}")
+        print(f"Total accounts loaded: {len(ACCOUNTS)}")
+        print(f"Structure: {total_batches} batches x {BATCH_SIZE} accounts x {CYCLES_PER_BATCH} cycles per batch.")
         
         browser = p.chromium.launch(
             headless=True,
@@ -338,50 +362,36 @@ def run_all_accounts():
             ]
         )
 
-        while active_batch:
-            if current_idx >= len(active_batch):
-                current_idx = 0
-                cycle_count += 1
-                print("\n" + "=" * 60)
-                print(f"   STARTING CYCLE {cycle_count} ACROSS CURRENT {len(active_batch)} ACTIVE ACCOUNTS")
-                print("=" * 60)
+        for batch_index, current_batch in enumerate(batches, start=1):
+            print("\n" + "=" * 60)
+            print(f"   STARTING BATCH {batch_index} OF {total_batches}")
+            print(f"   Accounts in this batch: {[acc['email'] for acc in current_batch]}")
+            print("=" * 60)
 
-            account = active_batch[current_idx]
-            print(f"\n[Cycle {cycle_count} | Slot {current_idx + 1}/{len(active_batch)}] Account: {account['email']}")
+            for cycle in range(1, CYCLES_PER_BATCH + 1):
+                print(f"\n>>> [Batch {batch_index}/{total_batches}] CYCLE {cycle} OF {CYCLES_PER_BATCH} <<<")
 
-            context = browser.new_context(
-                viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
-                record_video_dir="videos/",
-                record_video_size={"width": 1920, "height": 1080}
-            )
-            page = context.new_page()
+                for acc_index, account in enumerate(current_batch, start=1):
+                    print(f"\n[Batch {batch_index}/{total_batches} | Cycle {cycle}/{CYCLES_PER_BATCH}] Account {acc_index}/{len(current_batch)} ({account['email']})")
 
-            try:
-                status = process_single_account(page, account)
-            except Exception as e:
-                print(f"Error executing {account['email']}: {e}")
-                status = "ERROR"
+                    context = browser.new_context(
+                        viewport={"width": 1920, "height": 1080},
+                        user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                        record_video_dir="videos/",
+                        record_video_size={"width": 1920, "height": 1080}
+                    )
+                    page = context.new_page()
 
-            context.close()
+                    try:
+                        status = process_single_account(page, account)
+                    except Exception as e:
+                        print(f"Error processing {account['email']}: {e}")
 
-            if status in ["LIMIT_REACHED", "INVALID_ACCOUNT"]:
-                reason = "invalid email" if status == "INVALID_ACCOUNT" else "limit reached"
-                print(f"--> [REMOVING ACCOUNT] {account['email']} ({reason}). Dropping from active batch.")
-                active_batch.pop(current_idx)
-
-                if remaining_pool:
-                    new_acc = remaining_pool.pop(0)
-                    print(f"--> [ADDING NEW ACCOUNT] Pulled {new_acc['email']} into slot {current_idx + 1}.")
-                    active_batch.insert(current_idx, new_acc)
-                else:
-                    print(f"--> Pool empty. Active batch size reduced to {len(active_batch)}.")
-            else:
-                current_idx += 1
-                time.sleep(1)
+                    context.close()
+                    time.sleep(2)
 
         print("\n" + "=" * 60)
-        print("ALL VALID ACCOUNTS HAVE COMPLETED THEIR PROCESS!")
+        print("ALL BATCHES AND CYCLES COMPLETED SUCCESSFULLY!")
         print("=" * 60)
         browser.close()
 
