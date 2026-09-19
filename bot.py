@@ -15,7 +15,7 @@ if not ALL_EMAILS:
 
 # ============================================================
 # TEST MODE LIMIT: Runs only the first 2 accounts
-# Remove '[:2]' below when ready for production!
+# Remove '[:2]' below when ready for full production!
 # ============================================================
 ALL_EMAILS = ALL_EMAILS[:2]
 
@@ -45,26 +45,11 @@ def check_login_failed(page):
 
 def dismiss_initial_popups(page):
     """Dismisses promotional modals ('GPT Image 2.5', 'SEEDANCE', 'WAN 3.0') on /earn-credits."""
-    page.wait_for_timeout(2000)
+    page.wait_for_timeout(1500)
 
     try:
         page.keyboard.press("Escape")
-        page.wait_for_timeout(500)
-    except Exception:
-        pass
-
-    try:
-        page.evaluate("""() => {
-            const buttons = Array.from(document.querySelectorAll('button, div, span, svg, i, a'));
-            for (let b of buttons) {
-                const txt = b.textContent ? b.textContent.trim() : '';
-                const aria = b.getAttribute('aria-label') || '';
-                if ((txt === '×' || txt === 'x' || txt === 'X' || aria.toLowerCase().includes('close')) && b.offsetWidth > 0 && b.offsetHeight > 0) {
-                    b.click();
-                }
-            }
-        }""")
-        page.wait_for_timeout(1000)
+        page.wait_for_timeout(300)
     except Exception:
         pass
 
@@ -97,74 +82,64 @@ def dismiss_initial_popups(page):
         pass
 
 
-def is_ad_player_open(page):
-    """Checks if an actual ad overlay or video frame is currently open on the page."""
-    try:
-        for frame in page.frames:
-            if frame.get_by_text("Close", exact=True).is_visible() or \
-               frame.get_by_text("Advertisement", exact=False).is_visible() or \
-               frame.locator("text=/^close$/i").is_visible():
-                return True
-        return page.evaluate("""() => {
-            const els = Array.from(document.querySelectorAll('*'));
-            return els.some(el => 
-                el.children.length === 0 && 
-                (el.textContent.trim().toLowerCase() === 'close' || el.textContent.includes('Advertisement')) && 
-                el.offsetWidth > 0 && el.offsetHeight > 0
-            );
-        }""")
-    except Exception:
-        return False
-
-
 def click_watch_ad(page):
-    """Clears popups, scrolls to 'Watch ad to earn credits', clicks 'Go Now', and verifies ad opens."""
-    for attempt in range(3):
-        dismiss_initial_popups(page)
-        page.mouse.wheel(0, 500)
+    """Scrolls directly to 'Watch ad to earn credits' card and clicks its 'Go Now' button."""
+    try:
+        # 1. Scroll directly to the "Watch ad to earn credits" text card
+        page.evaluate("""() => {
+            const els = Array.from(document.querySelectorAll('*'));
+            const card = els.find(el => el.children.length === 0 && el.textContent.includes('Watch ad to earn credits'));
+            if (card) {
+                card.scrollIntoView({ behavior: 'instant', block: 'center' });
+            }
+        }""")
         page.wait_for_timeout(1000)
 
-        try:
-            card = page.locator("div").filter(has_text="Watch ad to earn credits")
-            btn = card.get_by_text("Go Now").last
-            if btn.is_visible():
-                btn.scroll_into_view_if_needed()
-                btn.click(force=True)
-                page.wait_for_timeout(3000)
-                if is_ad_player_open(page):
-                    return True
-        except Exception:
-            pass
+        # 2. Execute exact click on 'Go Now' inside the card
+        clicked = page.evaluate("""() => {
+            const all = Array.from(document.querySelectorAll('*'));
+            const titleEl = all.find(el => 
+                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
+            );
+            if (!titleEl) return false;
 
-        try:
-            clicked = page.evaluate("""() => {
-                const allElements = Array.from(document.querySelectorAll('*'));
-                const watchAdTitle = allElements.find(el =>
-                    el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
-                );
-                if (!watchAdTitle) return false;
-
-                let card = watchAdTitle;
-                while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
-                    card = card.parentElement;
+            let container = titleEl;
+            for (let i = 0; i < 6; i++) {
+                if (!container || container === document.body) break;
+                if (container.textContent.includes('Go Now')) {
+                    break;
                 }
-                if (!card) card = watchAdTitle.closest('div');
-                if (!card) return false;
+                container = container.parentElement;
+            }
 
-                const goNowBtn = Array.from(card.querySelectorAll('*')).find(el =>
-                    el.textContent.trim().toLowerCase().includes('go now')
-                );
+            if (!container) return false;
 
-                if (!goNowBtn) return false;
-                goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-                goNowBtn.click();
+            const btns = Array.from(container.querySelectorAll('*'));
+            const goBtn = btns.find(el => 
+                el.children.length === 0 && el.textContent.trim().toLowerCase() === 'go now'
+            ) || btns.find(el => el.textContent.trim().toLowerCase().includes('go now'));
+
+            if (goBtn) {
+                goBtn.click();
                 return true;
-            }""")
-            page.wait_for_timeout(3000)
-            if clicked and is_ad_player_open(page):
-                return True
-        except Exception:
-            pass
+            }
+            return false;
+        }""")
+        if clicked:
+            return True
+    except Exception:
+        pass
+
+    # Fallback locator
+    try:
+        card = page.locator("div").filter(has_text="Watch ad to earn credits")
+        btn = card.get_by_text("Go Now").last
+        if btn.is_visible():
+            btn.scroll_into_view_if_needed()
+            btn.click(force=True)
+            return True
+    except Exception:
+        pass
 
     return False
 
@@ -305,8 +280,7 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    # --- WATCH AD FOR 35 SECONDS BEFORE CLOSING ---
-    print(f"[{email}] Ad opened! Watching video ad for 35 seconds...")
+    print(f"[{email}] Ad launched! Watching video ad (35s)...")
     time.sleep(35)
 
     print(f"[{email}] Closing ad player...")
