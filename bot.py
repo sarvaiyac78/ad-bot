@@ -15,7 +15,7 @@ if not ALL_EMAILS:
 
 # ============================================================
 # TEST MODE LIMIT: Runs only the first 2 accounts
-# Remove '[:2]' below when you are ready to run all 50 accounts!
+# Remove '[:2]' below when ready for production!
 # ============================================================
 ALL_EMAILS = ALL_EMAILS[:2]
 
@@ -44,22 +44,40 @@ def check_login_failed(page):
 
 
 def purge_popups(page):
+    """Detects and destroys the 'GPT Image 2.5 / WHAT'S NEW' modal popup and backdrops."""
+    page.wait_for_timeout(1500)
+
+    # 1. Attempt to click top-right close buttons ('x' or '×')
     try:
         page.evaluate("""() => {
-            const badPhrases = [
-                'Celebrity Twin Finder', 
-                'Find Your Star', 
-                'GPT Image 2.5', 
-                "WHAT'S NEW"
-            ];
-            const allNodes = Array.from(document.querySelectorAll('*'));
+            const elements = Array.from(document.querySelectorAll('button, div, span, svg, path, i'));
+            for (let el of elements) {
+                const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
+                const aria = el.getAttribute('aria-label') ? el.getAttribute('aria-label').toLowerCase() : '';
+                const cls = el.className && typeof el.className === 'string' ? el.className.toLowerCase() : '';
+
+                if ((txt === '×' || txt === 'x' || aria.includes('close') || cls.includes('close')) && el.offsetWidth > 0 && el.offsetHeight > 0) {
+                    el.click();
+                }
+            }
+        }""")
+        page.wait_for_timeout(500)
+    except Exception:
+        pass
+
+    # 2. Force-remove the popup modal DOM tree and overlay background
+    try:
+        page.evaluate("""() => {
+            const phrases = ['gpt image 2.5', "what's new", 'celebrity twin finder', 'find your star', 'create now'];
+
+            const allNodes = Array.from(document.querySelectorAll('div, section, dialog, [role="dialog"]'));
             allNodes.forEach(el => {
-                if (el.children.length === 0 && badPhrases.some(p => el.textContent.includes(p))) {
+                const txt = el.textContent ? el.textContent.toLowerCase() : '';
+                if (phrases.some(p => txt.includes(p))) {
                     let container = el;
-                    for (let i = 0; i < 8; i++) {
-                        if (!container || container === document.body) break;
+                    while (container && container !== document.body) {
                         const style = window.getComputedStyle(container);
-                        if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
+                        if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog' || container.className.includes('modal')) {
                             container.remove();
                             break;
                         }
@@ -67,9 +85,17 @@ def purge_popups(page):
                     }
                 }
             });
-            const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"]');
-            overlays.forEach(o => o.remove());
+
+            // Wipes dark backdrop overlay curtains
+            const overlays = Array.from(document.querySelectorAll('div, span, [class*="backdrop"], [class*="overlay"], [class*="mask"]'));
+            overlays.forEach(o => {
+                const style = window.getComputedStyle(o);
+                if (style.position === 'fixed' && style.zIndex >= 50) {
+                    o.remove();
+                }
+            });
         }""")
+        page.wait_for_timeout(500)
     except Exception:
         pass
 
@@ -90,7 +116,6 @@ def click_close_button(page):
     for attempt in range(6):
         page.wait_for_timeout(1500)
 
-        # 1. Direct JS Leaf Node Search for "Close" text
         try:
             clicked = page.evaluate("""() => {
                 const allElements = Array.from(document.querySelectorAll('*'));
@@ -111,7 +136,6 @@ def click_close_button(page):
         except Exception:
             pass
 
-        # 2. Native Playwright Locators
         for frame in page.frames:
             locators = [
                 frame.get_by_text("Close", exact=True),
@@ -136,7 +160,6 @@ def click_ok_button(page):
     for attempt in range(6):
         page.wait_for_timeout(1500)
 
-        # 1. Direct JS Button Detection
         try:
             clicked = page.evaluate("""() => {
                 const allElements = Array.from(document.querySelectorAll('*'));
@@ -157,7 +180,6 @@ def click_ok_button(page):
         except Exception:
             pass
 
-        # 2. Native Playwright Locators
         for frame in page.frames:
             locators = [
                 frame.get_by_role("button", name="OK"),
@@ -248,10 +270,11 @@ def process_single_account(page, account):
 
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
-    page.wait_for_timeout(4000)
+    page.wait_for_timeout(3000)
 
+    # Purge popups immediately after landing
     purge_popups(page)
-    page.wait_for_timeout(1000)
+
     page.mouse.wheel(0, 500)
     page.wait_for_timeout(1000)
 
