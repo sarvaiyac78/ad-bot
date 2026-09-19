@@ -14,10 +14,10 @@ if not ALL_EMAILS:
     raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
 
 # ============================================================
-# TEST MODE LIMIT: Runs only the first 2 accounts
-# Remove '[:2]' below when ready for full 50-account production!
+# TEST MODE LIMIT: Set to run 5 accounts
+# Remove '[:5]' below when ready for full 50-account production!
 # ============================================================
-ALL_EMAILS = ALL_EMAILS[:2]
+ALL_EMAILS = ALL_EMAILS[:5]
 
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
 TARGET_BATCH_SIZE = 5
