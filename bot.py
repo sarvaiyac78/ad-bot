@@ -13,6 +13,12 @@ ALL_EMAILS = [e.strip() for e in raw_emails.replace(",", " ").split() if e.strip
 if not ALL_EMAILS:
     raise ValueError("ERROR: No emails found in 'ALL_EMAILS' secret! Please configure GitHub Secrets.")
 
+# ============================================================
+# TEST MODE LIMIT: Runs only the first 2 accounts
+# Remove '[:2]' below when you are ready to run all 50 accounts!
+# ============================================================
+ALL_EMAILS = ALL_EMAILS[:2]
+
 ACCOUNTS = [{"email": email, "password": email_password} for email in ALL_EMAILS]
 TARGET_BATCH_SIZE = 5
 
@@ -331,7 +337,7 @@ def run_all_accounts():
                 print(f"Error executing {account['email']}: {e}")
                 status = "ERROR"
 
-            context.close()  # Finalizes and saves video to videos/ directory
+            context.close()
 
             if status in ["LIMIT_REACHED", "INVALID_ACCOUNT"]:
                 reason = "invalid email" if status == "INVALID_ACCOUNT" else "limit reached"
