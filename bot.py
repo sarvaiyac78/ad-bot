@@ -44,58 +44,30 @@ def check_login_failed(page):
 
 
 def purge_popups(page):
-    """Detects and destroys the 'GPT Image 2.5 / WHAT'S NEW' modal popup and backdrops."""
-    page.wait_for_timeout(1500)
-
-    # 1. Attempt to click top-right close buttons ('x' or '×')
+    page.wait_for_timeout(1000)
     try:
         page.evaluate("""() => {
-            const elements = Array.from(document.querySelectorAll('button, div, span, svg, path, i'));
-            for (let el of elements) {
-                const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
-                const aria = el.getAttribute('aria-label') ? el.getAttribute('aria-label').toLowerCase() : '';
-                const cls = el.className && typeof el.className === 'string' ? el.className.toLowerCase() : '';
-
-                if ((txt === '×' || txt === 'x' || aria.includes('close') || cls.includes('close')) && el.offsetWidth > 0 && el.offsetHeight > 0) {
-                    el.click();
+            const allElements = Array.from(document.querySelectorAll('*'));
+            const gptModal = allElements.find(el => 
+                el.children.length === 0 && 
+                (el.textContent.includes('GPT Image 2.5') || el.textContent.includes("WHAT'S NEW"))
+            );
+            if (gptModal) {
+                let container = gptModal;
+                for (let i = 0; i < 10; i++) {
+                    if (!container || container === document.body) break;
+                    const style = window.getComputedStyle(container);
+                    if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog') {
+                        container.remove();
+                        break;
+                    }
+                    container = container.parentElement;
                 }
             }
+
+            const overlays = document.querySelectorAll('[class*="backdrop"], [class*="overlay"], [class*="mask"]');
+            overlays.forEach(o => o.remove());
         }""")
-        page.wait_for_timeout(500)
-    except Exception:
-        pass
-
-    # 2. Force-remove the popup modal DOM tree and overlay background
-    try:
-        page.evaluate("""() => {
-            const phrases = ['gpt image 2.5', "what's new", 'celebrity twin finder', 'find your star', 'create now'];
-
-            const allNodes = Array.from(document.querySelectorAll('div, section, dialog, [role="dialog"]'));
-            allNodes.forEach(el => {
-                const txt = el.textContent ? el.textContent.toLowerCase() : '';
-                if (phrases.some(p => txt.includes(p))) {
-                    let container = el;
-                    while (container && container !== document.body) {
-                        const style = window.getComputedStyle(container);
-                        if (style.position === 'fixed' || style.position === 'absolute' || container.getAttribute('role') === 'dialog' || container.className.includes('modal')) {
-                            container.remove();
-                            break;
-                        }
-                        container = container.parentElement;
-                    }
-                }
-            });
-
-            // Wipes dark backdrop overlay curtains
-            const overlays = Array.from(document.querySelectorAll('div, span, [class*="backdrop"], [class*="overlay"], [class*="mask"]'));
-            overlays.forEach(o => {
-                const style = window.getComputedStyle(o);
-                if (style.position === 'fixed' && style.zIndex >= 50) {
-                    o.remove();
-                }
-            });
-        }""")
-        page.wait_for_timeout(500)
     except Exception:
         pass
 
@@ -112,94 +84,92 @@ def check_daily_limit_reached(page):
     return False
 
 
-def click_close_button(page):
-    for attempt in range(6):
-        page.wait_for_timeout(1500)
+def try_click_close(page):
+    try:
+        clicked = page.evaluate("""() => {
+            const allElements = Array.from(document.querySelectorAll('*'));
+            const closeEl = allElements.find(el => 
+                el.children.length === 0 && 
+                el.textContent.trim().toLowerCase() === 'close' &&
+                el.offsetWidth > 0 && el.offsetHeight > 0
+            );
+            if (closeEl) {
+                closeEl.click();
+                return true;
+            }
+            return false;
+        }""")
+        if clicked:
+            return True
+    except Exception:
+        pass
 
-        try:
-            clicked = page.evaluate("""() => {
-                const allElements = Array.from(document.querySelectorAll('*'));
-                const closeEl = allElements.find(el => 
-                    el.children.length === 0 && 
-                    el.textContent.trim().toLowerCase() === 'close' &&
-                    el.offsetWidth > 0 && el.offsetHeight > 0
-                );
-                if (closeEl) {
-                    closeEl.click();
-                    return true;
-                }
-                return false;
-            }""")
-            if clicked:
-                page.wait_for_timeout(1000)
-                return True
-        except Exception:
-            pass
-
-        for frame in page.frames:
-            locators = [
-                frame.get_by_text("Close", exact=True),
-                frame.locator("text=/^close$/i"),
-                frame.locator("span:has-text('Close')"),
-                frame.locator("div:has-text('Close')"),
-                frame.locator("button:has-text('Close')")
-            ]
-            for loc in locators:
-                try:
-                    if loc.count() > 0 and loc.first.is_visible():
-                        loc.first.click(force=True)
-                        page.wait_for_timeout(1000)
-                        return True
-                except Exception:
-                    pass
-
+    for frame in page.frames:
+        locators = [
+            frame.get_by_text("Close", exact=True),
+            frame.locator("text=/^close$/i"),
+            frame.locator("span:has-text('Close')"),
+            frame.locator("div:has-text('Close')"),
+            frame.locator("button:has-text('Close')")
+        ]
+        for loc in locators:
+            try:
+                if loc.count() > 0 and loc.first.is_visible():
+                    loc.first.click(force=True)
+                    return True
+            except Exception:
+                pass
     return False
 
 
-def click_ok_button(page):
-    for attempt in range(6):
-        page.wait_for_timeout(1500)
+def try_click_ok(page):
+    try:
+        clicked = page.evaluate("""() => {
+            const allElements = Array.from(document.querySelectorAll('*'));
+            const okBtn = allElements.find(el => 
+                (el.tagName === 'BUTTON' || el.tagName === 'DIV' || el.tagName === 'SPAN') &&
+                el.textContent.trim().toLowerCase() === 'ok' &&
+                el.offsetWidth > 0 && el.offsetHeight > 0
+            );
+            if (okBtn) {
+                okBtn.click();
+                return true;
+            }
+            return false;
+        }""")
+        if clicked:
+            return True
+    except Exception:
+        pass
 
-        try:
-            clicked = page.evaluate("""() => {
-                const allElements = Array.from(document.querySelectorAll('*'));
-                const okBtn = allElements.find(el => 
-                    (el.tagName === 'BUTTON' || el.tagName === 'DIV' || el.tagName === 'SPAN') &&
-                    el.textContent.trim().toLowerCase() === 'ok' &&
-                    el.offsetWidth > 0 && el.offsetHeight > 0
-                );
-                if (okBtn) {
-                    okBtn.click();
-                    return true;
-                }
-                return false;
-            }""")
-            if clicked:
-                page.wait_for_timeout(1000)
-                return True
-        except Exception:
-            pass
-
-        for frame in page.frames:
-            locators = [
-                frame.get_by_role("button", name="OK"),
-                frame.get_by_text("OK", exact=True),
-                frame.locator("button:has-text('OK')"),
-                frame.locator("div[role='dialog'] button")
-            ]
-            for loc in locators:
-                try:
-                    if loc.count() > 0 and loc.first.is_visible():
-                        loc.first.click(force=True)
-                        page.wait_for_timeout(1000)
-                        return True
-                except Exception:
-                    pass
-
+    for frame in page.frames:
+        locators = [
+            frame.get_by_role("button", name="OK"),
+            frame.get_by_text("OK", exact=True),
+            frame.locator("button:has-text('OK')"),
+            frame.locator("div[role='dialog'] button")
+        ]
+        for loc in locators:
+            try:
+                if loc.count() > 0 and loc.first.is_visible():
+                    loc.first.click(force=True)
+                    return True
+            except Exception:
+                pass
     return False
 
 
 def click_watch_ad(page):
+    try:
+        card = page.locator("div").filter(has_text="Watch ad to earn credits")
+        btn = card.get_by_text("Go Now").last
+        if btn.is_visible():
+            btn.scroll_into_view_if_needed()
+            btn.click(force=True)
+            return True
+    except Exception:
+        pass
+
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -215,25 +185,17 @@ def click_watch_ad(page):
             if (!card) card = watchAdTitle.closest('div');
             if (!card) return false;
 
-            const elements = Array.from(card.querySelectorAll('*'));
-            const goNowBtn = elements.find(el =>
+            const goNowBtn = Array.from(card.querySelectorAll('*')).find(el =>
                 el.textContent.trim().toLowerCase().includes('go now')
             );
 
             if (!goNowBtn) return false;
-
             goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
             goNowBtn.click();
             return true;
         }""")
         if clicked:
             return True
-    except Exception:
-        pass
-
-    try:
-        page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
-        return True
     except Exception:
         pass
     return False
@@ -272,9 +234,7 @@ def process_single_account(page, account):
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
     page.wait_for_timeout(3000)
 
-    # Purge popups immediately after landing
     purge_popups(page)
-
     page.mouse.wheel(0, 500)
     page.wait_for_timeout(1000)
 
@@ -293,20 +253,30 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Watching video ad (32s)...")
-    time.sleep(32)
+    print(f"[{email}] Watching ad & actively monitoring for Close/OK buttons...")
+    ad_closed = False
+    reward_claimed = False
+    start_time = time.time()
 
-    print(f"[{email}] Closing ad player...")
-    if click_close_button(page):
-        print(f"[{email}] Ad closed successfully.")
-    else:
-        print(f"[{email}] Warning: Close button click failed.")
+    while time.time() - start_time < 40:
+        page.wait_for_timeout(1000)
 
-    print(f"[{email}] Claiming reward...")
-    if click_ok_button(page):
-        print(f"[{email}] SUCCESS: Reward claimed!")
-    else:
-        print(f"[{email}] Warning: OK button not found.")
+        if not ad_closed:
+            if try_click_close(page):
+                print(f"[{email}] Ad closed successfully.")
+                ad_closed = True
+                page.wait_for_timeout(1500)
+
+        if ad_closed or (time.time() - start_time > 15):
+            if try_click_ok(page):
+                print(f"[{email}] SUCCESS: Reward claimed!")
+                reward_claimed = True
+                break
+
+    if not ad_closed:
+        print(f"[{email}] Warning: Close button click was not detected within 40s.")
+    if not reward_claimed:
+        print(f"[{email}] Warning: OK button not found within 40s.")
 
     return "SUCCESS"
 
