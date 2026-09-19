@@ -39,12 +39,6 @@ def check_login_failed(page):
 
 def purge_popups(page):
     try:
-        page.keyboard.press("Escape")
-        page.wait_for_timeout(300)
-    except Exception:
-        pass
-
-    try:
         page.evaluate("""() => {
             const badPhrases = [
                 'Celebrity Twin Finder', 
@@ -86,135 +80,75 @@ def check_daily_limit_reached(page):
     return False
 
 
-def click_close_button(page):
-    page.wait_for_timeout(2500)
-    
-    for _ in range(2):
-        try:
-            page.keyboard.press("Escape")
-            page.wait_for_timeout(400)
-        except Exception:
-            pass
-
+def ensure_video_playing(page):
+    """Ensures HTML5 video ads do not pause or stall in headless mode."""
     try:
-        closed = page.evaluate("""() => {
-            function findAndClick(doc) {
-                const elements = Array.from(doc.querySelectorAll('button, div, span, a, svg, i'));
-                for (let el of elements) {
-                    const txt = el.textContent ? el.textContent.trim().toLowerCase() : '';
-                    const aria = el.getAttribute('aria-label') ? el.getAttribute('aria-label').toLowerCase() : '';
-                    const cls = el.className && typeof el.className === 'string' ? el.className.toLowerCase() : '';
-
-                    const isClose = txt === 'close' || txt === '×' || txt === 'x' || txt === 'skip' || 
-                                    aria.includes('close') || cls.includes('close') || cls.includes('skip');
-
-                    if (isClose && el.offsetWidth > 0 && el.offsetHeight > 0) {
-                        el.click();
-                        return true;
-                    }
+        page.evaluate("""() => {
+            const vids = document.querySelectorAll('video');
+            vids.forEach(v => {
+                if (v.paused) {
+                    v.play().catch(() => {});
                 }
-                return false;
-            }
-
-            if (findAndClick(document)) return true;
-
-            const iframes = document.querySelectorAll('iframe');
-            for (let f of iframes) {
-                try {
-                    if (f.contentDocument && findAndClick(f.contentDocument)) return true;
-                } catch(e) {}
-            }
-            return false;
+            });
         }""")
-        if closed:
-            page.wait_for_timeout(1000)
-            return True
     except Exception:
         pass
 
-    for frame in page.frames:
-        locators = [
-            frame.get_by_text("Close", exact=True),
-            frame.locator("text=/^close$/i"),
-            frame.locator("button:has-text('Close')"),
-            frame.locator("[role='button']:has-text('Close')"),
-            frame.locator("[aria-label*='close' i]"),
-            frame.locator(".close-btn, .closeButton, .btn-close, .skip-button, .reward-close"),
-            frame.locator("text='×'"),
-            frame.locator("text='X'")
-        ]
-        for loc in locators:
-            try:
-                count = loc.count()
-                for i in range(count):
-                    element = loc.nth(i)
-                    if element.is_visible():
-                        element.click(force=True)
+
+def click_close_button(page):
+    # Try multiple attempts in case close button animates in late
+    for attempt in range(5):
+        page.wait_for_timeout(1500)
+
+        # Search across all frames using native Playwright locators
+        for frame in page.frames:
+            locators = [
+                frame.get_by_text("Close", exact=True),
+                frame.locator("text=/^close$/i"),
+                frame.locator("button:has-text('Close')"),
+                frame.locator("[role='button']:has-text('Close')"),
+                frame.locator("[aria-label*='close' i]"),
+                frame.locator(".close-btn, .closeButton, .btn-close, .skip-button, .reward-close, .close_button"),
+                frame.locator("button:has-text('×')"),
+                frame.locator("button:has-text('X')"),
+                frame.locator("svg[class*='close']"),
+                frame.locator("path[d*='M']")
+            ]
+            for loc in locators:
+                try:
+                    if loc.count() > 0 and loc.first.is_visible():
+                        loc.first.click(force=True)
                         page.wait_for_timeout(1000)
                         return True
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
     return False
 
 
 def click_ok_button(page):
-    page.wait_for_timeout(2500)
-    
-    try:
-        page.keyboard.press("Enter")
-        page.wait_for_timeout(500)
-    except Exception:
-        pass
+    for attempt in range(5):
+        page.wait_for_timeout(1500)
 
-    try:
-        ok_clicked = page.evaluate("""() => {
-            function findOK(doc) {
-                const buttons = Array.from(doc.querySelectorAll('button, div[role="button"], a, span'));
-                for (let btn of buttons) {
-                    const txt = btn.textContent ? btn.textContent.trim().toLowerCase() : '';
-                    if ((txt === 'ok' || txt === 'claim' || txt === 'confirm' || txt === 'got it') && btn.offsetWidth > 0 && btn.offsetHeight > 0) {
-                        btn.click();
-                        return true;
-                    }
-                }
-                return false;
-            }
-
-            if (findOK(document)) return true;
-
-            const iframes = document.querySelectorAll('iframe');
-            for (let f of iframes) {
-                try {
-                    if (f.contentDocument && findOK(f.contentDocument)) return true;
-                } catch(e) {}
-            }
-            return false;
-        }""")
-        if ok_clicked:
-            page.wait_for_timeout(1000)
-            return True
-    except Exception:
-        pass
-
-    for frame in page.frames:
-        locators = [
-            frame.get_by_role("button", name="OK"),
-            frame.get_by_text("OK", exact=True),
-            frame.locator("text=/^ok$/i"),
-            frame.locator("button:has-text('OK')"),
-            frame.locator("div[role='dialog'] button")
-        ]
-        for loc in locators:
-            try:
-                count = loc.count()
-                for i in range(count):
-                    element = loc.nth(i)
-                    if element.is_visible():
-                        element.click(force=True)
+        for frame in page.frames:
+            locators = [
+                frame.get_by_role("button", name="OK"),
+                frame.get_by_text("OK", exact=True),
+                frame.locator("text=/^ok$/i"),
+                frame.locator("button:has-text('OK')"),
+                frame.locator("button:has-text('Claim')"),
+                frame.locator("button:has-text('Confirm')"),
+                frame.locator("button:has-text('Got it')"),
+                frame.locator("div[role='dialog'] button")
+            ]
+            for loc in locators:
+                try:
+                    if loc.count() > 0 and loc.first.is_visible():
+                        loc.first.click(force=True)
+                        page.wait_for_timeout(1000)
                         return True
-            except Exception:
-                pass
+                except Exception:
+                    pass
 
     return False
 
@@ -284,7 +218,6 @@ def process_single_account(page, account):
     page.get_by_role("button", name="Log in").last.click()
     page.wait_for_timeout(3500)
 
-    # Check for invalid email or bad password error
     if check_login_failed(page):
         print(f"[{email}] LOGIN FAILED: 'Email does not exist' or invalid credentials detected!")
         return "INVALID_ACCOUNT"
@@ -314,15 +247,15 @@ def process_single_account(page, account):
         return "LIMIT_REACHED"
 
     print(f"[{email}] Watching video ad (35s)...")
-    time.sleep(35)
+    for _ in range(7):
+        time.sleep(5)
+        ensure_video_playing(page)
 
     print(f"[{email}] Closing ad player...")
     if click_close_button(page):
         print(f"[{email}] Ad closed successfully.")
     else:
         print(f"[{email}] Warning: Close button click failed.")
-
-    page.wait_for_timeout(2000)
 
     print(f"[{email}] Claiming reward...")
     if click_ok_button(page):
@@ -352,7 +285,10 @@ def run_all_accounts():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled"
+                "--disable-blink-features=AutomationControlled",
+                "--autoplay-policy=no-user-gesture-required",
+                "--no-first-run",
+                "--use-fake-ui-for-media-stream"
             ]
         )
 
@@ -381,7 +317,6 @@ def run_all_accounts():
 
             context.close()
 
-            # Remove account if limit reached OR if email doesn't exist/login fails
             if status in ["LIMIT_REACHED", "INVALID_ACCOUNT"]:
                 reason = "invalid email" if status == "INVALID_ACCOUNT" else "limit reached"
                 print(f"--> [REMOVING ACCOUNT] {account['email']} ({reason}). Dropping from active batch.")
@@ -405,3 +340,4 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
+    
