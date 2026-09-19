@@ -15,7 +15,7 @@ if not ALL_EMAILS:
 
 # ============================================================
 # TEST MODE LIMIT: Runs only the first 2 accounts
-# Remove '[:2]' below when ready for full production!
+# Remove '[:2]' below when ready for full 50-account production!
 # ============================================================
 ALL_EMAILS = ALL_EMAILS[:2]
 
@@ -85,7 +85,7 @@ def dismiss_initial_popups(page):
 def click_watch_ad(page):
     """Scrolls directly to 'Watch ad to earn credits' card and clicks its 'Go Now' button."""
     try:
-        # 1. Scroll directly to the "Watch ad to earn credits" text card
+        # 1. Scroll directly to the "Watch ad to earn credits" section
         page.evaluate("""() => {
             const els = Array.from(document.querySelectorAll('*'));
             const card = els.find(el => el.children.length === 0 && el.textContent.includes('Watch ad to earn credits'));
@@ -95,7 +95,7 @@ def click_watch_ad(page):
         }""")
         page.wait_for_timeout(1000)
 
-        # 2. Execute exact click on 'Go Now' inside the card
+        # 2. Click the orange 'Go Now' button inside the card container
         clicked = page.evaluate("""() => {
             const all = Array.from(document.querySelectorAll('*'));
             const titleEl = all.find(el => 
@@ -157,6 +157,7 @@ def check_daily_limit_reached(page):
 
 
 def try_click_close(page):
+    """Finds and clicks the top-right 'Close' text element on the ad player overlay."""
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -195,6 +196,7 @@ def try_click_close(page):
 
 
 def try_click_ok(page):
+    """Finds and clicks the 'OK' button on the 'Congratulations!' reward modal."""
     try:
         clicked = page.evaluate("""() => {
             const allElements = Array.from(document.querySelectorAll('*'));
@@ -280,8 +282,8 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Ad launched! Watching video ad (35s)...")
-    time.sleep(35)
+    print(f"[{email}] Ad launched! Watching video ad (30s)...")
+    time.sleep(30)
 
     print(f"[{email}] Closing ad player...")
     ad_closed = False
