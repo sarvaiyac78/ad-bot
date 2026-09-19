@@ -81,11 +81,10 @@ def check_daily_limit_reached(page):
 
 
 def click_close_button(page):
-    """Finds and clicks the top-right 'Close' text element shown in the video."""
     for attempt in range(6):
         page.wait_for_timeout(1500)
 
-        # 1. Direct JS Leaf Node Detection
+        # 1. Direct JS Leaf Node Search for "Close" text
         try:
             clicked = page.evaluate("""() => {
                 const allElements = Array.from(document.querySelectorAll('*'));
@@ -128,7 +127,6 @@ def click_close_button(page):
 
 
 def click_ok_button(page):
-    """Finds and clicks the 'OK' button on the 'Congratulations!' modal popup."""
     for attempt in range(6):
         page.wait_for_timeout(1500)
 
@@ -285,6 +283,7 @@ def process_single_account(page, account):
 
 
 def run_all_accounts():
+    os.makedirs("videos", exist_ok=True)
     remaining_pool = list(ACCOUNTS)
     active_batch = []
 
@@ -320,7 +319,9 @@ def run_all_accounts():
 
             context = browser.new_context(
                 viewport={"width": 1920, "height": 1080},
-                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36"
+                user_agent="Mozilla/5.0 (Windows NT 10.0; Win64; x64) AppleWebKit/537.36 (KHTML, like Gecko) Chrome/122.0.0.0 Safari/537.36",
+                record_video_dir="videos/",
+                record_video_size={"width": 1920, "height": 1080}
             )
             page = context.new_page()
 
@@ -330,7 +331,7 @@ def run_all_accounts():
                 print(f"Error executing {account['email']}: {e}")
                 status = "ERROR"
 
-            context.close()
+            context.close()  # Finalizes and saves video to videos/ directory
 
             if status in ["LIMIT_REACHED", "INVALID_ACCOUNT"]:
                 reason = "invalid email" if status == "INVALID_ACCOUNT" else "limit reached"
