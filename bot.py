@@ -80,39 +80,40 @@ def check_daily_limit_reached(page):
     return False
 
 
-def ensure_video_playing(page):
-    """Ensures HTML5 video ads do not pause or stall in headless mode."""
-    try:
-        page.evaluate("""() => {
-            const vids = document.querySelectorAll('video');
-            vids.forEach(v => {
-                if (v.paused) {
-                    v.play().catch(() => {});
-                }
-            });
-        }""")
-    except Exception:
-        pass
-
-
 def click_close_button(page):
-    # Try multiple attempts in case close button animates in late
-    for attempt in range(5):
+    """Finds and clicks the top-right 'Close' text element shown in the video."""
+    for attempt in range(6):
         page.wait_for_timeout(1500)
 
-        # Search across all frames using native Playwright locators
+        # 1. Direct JS Leaf Node Detection
+        try:
+            clicked = page.evaluate("""() => {
+                const allElements = Array.from(document.querySelectorAll('*'));
+                const closeEl = allElements.find(el => 
+                    el.children.length === 0 && 
+                    el.textContent.trim().toLowerCase() === 'close' &&
+                    el.offsetWidth > 0 && el.offsetHeight > 0
+                );
+                if (closeEl) {
+                    closeEl.click();
+                    return true;
+                }
+                return false;
+            }""")
+            if clicked:
+                page.wait_for_timeout(1000)
+                return True
+        except Exception:
+            pass
+
+        # 2. Native Playwright Locators
         for frame in page.frames:
             locators = [
                 frame.get_by_text("Close", exact=True),
                 frame.locator("text=/^close$/i"),
-                frame.locator("button:has-text('Close')"),
-                frame.locator("[role='button']:has-text('Close')"),
-                frame.locator("[aria-label*='close' i]"),
-                frame.locator(".close-btn, .closeButton, .btn-close, .skip-button, .reward-close, .close_button"),
-                frame.locator("button:has-text('×')"),
-                frame.locator("button:has-text('X')"),
-                frame.locator("svg[class*='close']"),
-                frame.locator("path[d*='M']")
+                frame.locator("span:has-text('Close')"),
+                frame.locator("div:has-text('Close')"),
+                frame.locator("button:has-text('Close')")
             ]
             for loc in locators:
                 try:
@@ -127,18 +128,37 @@ def click_close_button(page):
 
 
 def click_ok_button(page):
-    for attempt in range(5):
+    """Finds and clicks the 'OK' button on the 'Congratulations!' modal popup."""
+    for attempt in range(6):
         page.wait_for_timeout(1500)
 
+        # 1. Direct JS Button Detection
+        try:
+            clicked = page.evaluate("""() => {
+                const allElements = Array.from(document.querySelectorAll('*'));
+                const okBtn = allElements.find(el => 
+                    (el.tagName === 'BUTTON' || el.tagName === 'DIV' || el.tagName === 'SPAN') &&
+                    el.textContent.trim().toLowerCase() === 'ok' &&
+                    el.offsetWidth > 0 && el.offsetHeight > 0
+                );
+                if (okBtn) {
+                    okBtn.click();
+                    return true;
+                }
+                return false;
+            }""")
+            if clicked:
+                page.wait_for_timeout(1000)
+                return True
+        except Exception:
+            pass
+
+        # 2. Native Playwright Locators
         for frame in page.frames:
             locators = [
                 frame.get_by_role("button", name="OK"),
                 frame.get_by_text("OK", exact=True),
-                frame.locator("text=/^ok$/i"),
                 frame.locator("button:has-text('OK')"),
-                frame.locator("button:has-text('Claim')"),
-                frame.locator("button:has-text('Confirm')"),
-                frame.locator("button:has-text('Got it')"),
                 frame.locator("div[role='dialog'] button")
             ]
             for loc in locators:
@@ -246,10 +266,8 @@ def process_single_account(page, account):
         print(f"[{email}] LIMIT DETECTED: 'You have used all your ad watch opportunities for today.'")
         return "LIMIT_REACHED"
 
-    print(f"[{email}] Watching video ad (35s)...")
-    for _ in range(7):
-        time.sleep(5)
-        ensure_video_playing(page)
+    print(f"[{email}] Watching video ad (32s)...")
+    time.sleep(32)
 
     print(f"[{email}] Closing ad player...")
     if click_close_button(page):
@@ -285,10 +303,7 @@ def run_all_accounts():
                 "--no-sandbox",
                 "--disable-setuid-sandbox",
                 "--disable-dev-shm-usage",
-                "--disable-blink-features=AutomationControlled",
-                "--autoplay-policy=no-user-gesture-required",
-                "--no-first-run",
-                "--use-fake-ui-for-media-stream"
+                "--disable-blink-features=AutomationControlled"
             ]
         )
 
@@ -340,4 +355,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
