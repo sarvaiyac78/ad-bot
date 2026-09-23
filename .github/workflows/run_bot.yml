@@ -1,8 +1,8 @@
 name: Run Daily Ad Bot
 
 on:
-  workflow_dispatch:
-  workflow_run:
+  workflow_dispatch: # Allows manual triggering anytime
+  workflow_run:      # Automatically triggers a fresh job run when the previous one finishes or times out
     workflows: ["Run Daily Ad Bot"]
     types:
       - completed
@@ -10,7 +10,7 @@ on:
 jobs:
   run-automation:
     runs-on: ubuntu-latest
-    timeout-minutes: 350 # Gracefully stops at ~5.8 hours to allow video saving
+    timeout-minutes: 340 # Gracefully stops at ~5.6 hours (before GitHub's 6h limit) to save videos and trigger the next run
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -57,7 +57,7 @@ jobs:
         run: python -u bot.py
 
       - name: Upload Execution Videos
-        if: always()
+        if: always() # Uploads videos on success, failure, timeout, or manual cancel
         uses: actions/upload-artifact@v4
         with:
           name: execution-videos-${{ github.run_number }}
