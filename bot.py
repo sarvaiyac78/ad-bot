@@ -45,28 +45,22 @@ TARGET_BATCH_SIZE = 5
 
 
 def purge_popups(page):
-    """Safely removes promotional popups and carousels while leaving the Login Modal untouched."""
+    """Safely dismisses promotional popups via UI interactions without destroying DOM nodes."""
     try:
         page.keyboard.press("Escape")
+        page.wait_for_timeout(300)
     except Exception:
         pass
 
     try:
         page.evaluate("""() => {
-            const modals = Array.from(document.querySelectorAll('div[role="dialog"], [class*="modal"], [class*="popup"], [class*="card"]'));
-            modals.forEach(m => {
-                const isLoginForm = m.querySelector('input[placeholder*="email" i], input[type="email"]') ||
-                                    (m.textContent && (m.textContent.includes('Sign in') || m.textContent.includes('Continue with Email')));
-                const isPromo = m.textContent && (m.textContent.includes('GPT Image') || m.textContent.includes('SEEDANCE') || m.textContent.includes('WAN 3.0') || m.textContent.includes("WHAT'S NEW"));
-                if (!isLoginForm && (isPromo || m.getAttribute('role') === 'dialog')) {
-                    m.remove();
-                }
-            });
-
-            const overlays = Array.from(document.querySelectorAll('[class*="backdrop"], [class*="overlay"]'));
-            overlays.forEach(o => {
-                if (!o.querySelector('input')) {
-                    o.remove();
+            const dialogs = Array.from(document.querySelectorAll('div[role="dialog"], [class*="modal"], [class*="popup"]'));
+            dialogs.forEach(d => {
+                const isLogin = d.querySelector('input[placeholder*="email" i], input[type="email"]') ||
+                                (d.textContent && d.textContent.includes('Sign in'));
+                if (!isLogin) {
+                    const closeBtn = d.querySelector('button, [class*="close"], svg, i');
+                    if (closeBtn) closeBtn.click();
                 }
             });
         }""")
@@ -87,12 +81,13 @@ def check_daily_limit_reached(page):
 
 
 def click_close_button(page):
-    """5-Layer close engine specifically targeting Google Interstitial 'Close' buttons."""
+    """5-Layer bulletproof close engine specifically targeting Google Interstitial 'Close' buttons."""
     print("--> Waiting for 'Close' button to appear...")
 
     for attempt in range(15):
         page.wait_for_timeout(1000)
 
+        # Layer 1: Frame Locator Traversal across main page + nested Google Ad iframes
         for frame in page.frames:
             close_selectors = [
                 "text=/^close$/i",
@@ -122,6 +117,7 @@ def click_close_button(page):
                 except Exception:
                     pass
 
+        # Layer 2: JavaScript DOM leaf-node text match
         try:
             closed = page.evaluate("""() => {
                 function clickCloseInDoc(doc) {
@@ -158,6 +154,7 @@ def click_close_button(page):
         except Exception:
             pass
 
+        # Layer 3: Physical Mouse Coordinate Clicks for Google Interstitial (#goog_fullscreen_ad)
         if attempt >= 3:
             coords = [(1515, 235), (1520, 240), (1500, 230), (1480, 240), (1540, 245)]
             for cx, cy in coords:
@@ -167,11 +164,13 @@ def click_close_button(page):
                 except Exception:
                     pass
 
+        # Layer 4: Keyboard Escape
         try:
             page.keyboard.press("Escape")
         except Exception:
             pass
 
+    # Layer 5: Emergency Recovery - Reload page if ad overlay remains stuck
     print("--> [RECOVERY] Ad overlay did not respond. Refreshing page to clear modal...")
     try:
         page.goto("https://easemate.ai/earn-credits", wait_until="load")
@@ -248,42 +247,55 @@ def click_ok_button(page):
 
 
 def click_watch_ad(page):
-    try:
-        clicked = page.evaluate("""() => {
-            const allElements = Array.from(document.querySelectorAll('*'));
-            const watchAdTitle = allElements.find(el =>
-                el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
-            );
-            if (!watchAdTitle) return false;
+    """Clicks 'Go Now' and verifies if an ad modal or iframe actually launched."""
+    for attempt in range(3):
+        try:
+            # Try JS evaluator click
+            clicked = page.evaluate("""() => {
+                const allElements = Array.from(document.querySelectorAll('*'));
+                const watchAdTitle = allElements.find(el =>
+                    el.children.length === 0 && el.textContent.includes('Watch ad to earn credits')
+                );
+                if (!watchAdTitle) return false;
 
-            let card = watchAdTitle;
-            while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
-                card = card.parentElement;
-            }
-            if (!card) card = watchAdTitle.closest('div');
-            if (!card) return false;
+                let card = watchAdTitle;
+                while (card && card.parentElement && !card.textContent.includes('10 ads/day')) {
+                    card = card.parentElement;
+                }
+                if (!card) card = watchAdTitle.closest('div');
+                if (!card) return false;
 
-            const elements = Array.from(card.querySelectorAll('*'));
-            const goNowBtn = elements.find(el =>
-                el.textContent.trim().toLowerCase().includes('go now')
-            );
+                const elements = Array.from(card.querySelectorAll('*'));
+                const goNowBtn = elements.find(el =>
+                    el.textContent.trim().toLowerCase().includes('go now')
+                );
 
-            if (!goNowBtn) return false;
+                if (!goNowBtn) return false;
 
-            goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
-            goNowBtn.click();
-            return true;
-        }""")
-        if clicked:
-            return True
-    except Exception:
-        pass
+                goNowBtn.scrollIntoView({ behavior: 'instant', block: 'center' });
+                goNowBtn.click();
+                return true;
+            }""")
 
-    try:
-        page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
-        return True
-    except Exception:
-        pass
+            if not clicked:
+                page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
+
+            page.wait_for_timeout(2000)
+
+            # Check if ad loaded
+            has_ad = page.evaluate("""() => {
+                const iframes = document.querySelectorAll('iframe');
+                const hasGoogleAd = document.querySelector('[id*="goog_fullscreen"], [class*="ad-player"]');
+                return iframes.length > 0 || hasGoogleAd !== null;
+            }""")
+
+            if has_ad:
+                return True
+        except Exception:
+            pass
+
+        page.wait_for_timeout(1000)
+
     return False
 
 
@@ -339,11 +351,9 @@ def process_single_account(page, account):
     page.wait_for_timeout(1000)
 
     if not click_watch_ad(page):
-        print(f"[{email}] ERROR: Could not click 'Go Now'. Skipping...")
+        print(f"[{email}] ERROR: Could not trigger ad player. Skipping...")
         return "ERROR"
 
-    page.wait_for_timeout(1500)
-    purge_popups(page)
     page.wait_for_timeout(1000)
 
     if check_daily_limit_reached(page):
