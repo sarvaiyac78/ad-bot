@@ -247,9 +247,10 @@ def click_ok_button(page):
 
 
 def click_watch_ad(page):
-    """Clicks 'Go Now' and verifies whether the interstitial ad modal or player actually launched."""
+    """Clicks 'Go Now' and verifies if an ad modal or iframe actually launched."""
     for attempt in range(3):
         try:
+            # Try JS evaluator click
             clicked = page.evaluate("""() => {
                 const allElements = Array.from(document.querySelectorAll('*'));
                 const watchAdTitle = allElements.find(el =>
@@ -279,27 +280,19 @@ def click_watch_ad(page):
             if not clicked:
                 page.locator("div").filter(has_text="Watch ad to earn credits").get_by_text("Go Now").last.click(force=True)
 
-            page.wait_for_timeout(2500)
+            page.wait_for_timeout(2000)
 
+            # Check if ad loaded
             has_ad = page.evaluate("""() => {
-                const googleFullscreen = document.querySelector('[id*="goog_fullscreen"], [src*="googleads"], [id*="google_ads"]');
-                const videoElement = document.querySelector('video');
-                const activeModal = document.querySelector('div[role="dialog"], [class*="modal-open"], [class*="overlay"]');
-                
-                if (videoElement || googleFullscreen) return true;
-                if (activeModal) {
-                    const rect = activeModal.getBoundingClientRect();
-                    if (rect.width > 300 && rect.height > 300) return true;
-                }
-                return false;
+                const iframes = document.querySelectorAll('iframe');
+                const hasGoogleAd = document.querySelector('[id*="goog_fullscreen"], [class*="ad-player"]');
+                return iframes.length > 0 || hasGoogleAd !== null;
             }""")
 
             if has_ad:
                 return True
-            else:
-                print(f"--> Attempt {attempt + 1}: 'Go Now' clicked, but no active ad player detected. Retrying...")
-        except Exception as e:
-            print(f"--> Attempt {attempt + 1} error: {e}")
+        except Exception:
+            pass
 
         page.wait_for_timeout(1000)
 
@@ -340,6 +333,7 @@ def process_single_account(page, account):
 
     print(f"[{email}] Navigating to Earn Credits page...")
     page.goto("https://easemate.ai/earn-credits", wait_until="load")
+    
     page.wait_for_timeout(2500)
 
     purge_popups(page)
@@ -353,24 +347,11 @@ def process_single_account(page, account):
         return "LIMIT_REACHED"
 
     print(f"[{email}] Starting ad task...")
-    
-    # RETRY LOOP: Attempts up to 3 times with page refresh if ad fails to start
-    ad_started = False
-    for attempt in range(3):
-        purge_popups(page)
-        page.wait_for_timeout(1000)
+    purge_popups(page)
+    page.wait_for_timeout(1000)
 
-        if click_watch_ad(page):
-            ad_started = True
-            break
-        
-        print(f"[{email}] Warning: Ad failed to trigger on attempt {attempt + 1}. Reloading page and retrying...")
-        page.goto("https://easemate.ai/earn-credits", wait_until="load")
-        page.wait_for_timeout(2500)
-        page.mouse.wheel(0, 500)
-
-    if not ad_started:
-        print(f"[{email}] ERROR: No ad available from network for this account right now. Moving to next account...")
+    if not click_watch_ad(page):
+        print(f"[{email}] ERROR: Could not trigger ad player. Skipping...")
         return "ERROR"
 
     page.wait_for_timeout(1000)
@@ -440,6 +421,7 @@ def run_all_accounts():
 
             account = active_batch[current_idx]
             
+            # --- LIVE PROGRESS LOG SUMMARY ---
             print("\n" + "-" * 50)
             print(f" [PROGRESS STATUS]")
             print(f"  • Total Accounts:            {total_loaded}")
@@ -491,4 +473,3 @@ def run_all_accounts():
 
 if __name__ == "__main__":
     run_all_accounts()
-    
