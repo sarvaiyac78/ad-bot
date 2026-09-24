@@ -2,15 +2,13 @@ name: Run Daily Ad Bot
 
 on:
   workflow_dispatch:
-  repository_dispatch:
-    types: [rerun_ad_bot]
 
 permissions: write-all
 
 jobs:
   run-automation:
     runs-on: ubuntu-latest
-    timeout-minutes: 340   # Graceful stop at 5.6 hours
+    timeout-minutes: 340
     steps:
       - name: Checkout Repository
         uses: actions/checkout@v4
@@ -51,7 +49,6 @@ jobs:
           echo "=========================================================="
 
       - name: Run Script
-        id: run_script
         env:
           ACCOUNT_PASSWORD: ${{ secrets.ACCOUNT_PASSWORD }}
           DISPLAY: ":99"
@@ -64,11 +61,3 @@ jobs:
           name: execution-videos-${{ github.run_number }}
           path: videos/
           retention-days: 7
-
-      # ONLY triggers next run if the 6-hour timeout was reached (does NOT trigger on cancel or full completion)
-      - name: Trigger Next Run (Auto-Chain on Timeout Only)
-        if: timed-out()
-        uses: peter-evans/repository-dispatch@v3
-        with:
-          token: ${{ secrets.GITHUB_TOKEN }}
-          event-type: rerun_ad_bot
