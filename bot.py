@@ -42,9 +42,8 @@ if os.path.exists("completed_accounts.txt"):
         completed_set = {line.strip() for line in f if line.strip()}
     print(f"--> Found {len(completed_set)} previously completed accounts.")
 
-# AUTO-CLEAR CHECK: Reset on a fresh day start if all accounts completed previously
 if len(completed_set) >= len(ALL_EMAILS) and len(ALL_EMAILS) > 0:
-    print("--> [ALL COMPLETED DETECTED] Every account reached limit in previous run. Resetting completed list for fresh run...")
+    print("--> [ALL COMPLETED DETECTED] Every account reached limit in previous run. Resetting completed list...")
     if os.path.exists("completed_accounts.txt"):
         os.remove("completed_accounts.txt")
     completed_set = set()
@@ -53,6 +52,8 @@ PENDING_EMAILS = [e for e in ALL_EMAILS if e not in completed_set]
 
 if not PENDING_EMAILS:
     print("--> All accounts completed! Exiting...")
+    if os.path.exists("completed_accounts.txt"):
+        os.remove("completed_accounts.txt")
     sys.exit(0)
 
 ACCOUNTS = [{"id": i + 1, "email": email, "password": email_password} for i, email in enumerate(PENDING_EMAILS)]
@@ -537,11 +538,15 @@ def run_all_accounts():
 
         print("\n" + "=" * 60)
         print(f"SUMMARY: ALL {total_loaded} ACCOUNTS HAVE REACHED THEIR DAILY AD LIMIT!")
-        print("--> Daily cycle complete. Progress preserved for check_status.py.")
+        print("--> Clearing completed_accounts.txt so the list is fresh for tomorrow!")
         print("=" * 60)
+        
+        if os.path.exists("completed_accounts.txt"):
+            os.remove("completed_accounts.txt")
 
         browser.close()
 
 
 if __name__ == "__main__":
     run_all_accounts()
+    
