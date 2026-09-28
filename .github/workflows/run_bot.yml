@@ -63,7 +63,11 @@ jobs:
         run: |
           git config --global user.name "github-actions[bot]"
           git config --global user.email "github-actions[bot]@users.noreply.github.com"
-          git add completed_accounts.txt ALL_DONE.txt || true
+          
+          # Stage files safely depending on existence
+          [ -f completed_accounts.txt ] && git add completed_accounts.txt
+          [ -f ALL_DONE.txt ] && git add ALL_DONE.txt
+          
           if git status --porcelain | grep -E "completed_accounts.txt|ALL_DONE.txt"; then
             git commit -m "update: saved daily completion state"
             git push origin HEAD:${{ github.ref_name }}
@@ -86,3 +90,4 @@ jobs:
           GITHUB_REPOSITORY: ${{ github.repository }}
           GITHUB_RUN_ID: ${{ github.run_id }}
         run: python check_status.py
+        
